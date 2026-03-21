@@ -359,8 +359,6 @@ enum PlatformCapture {
   Windows(crate::windows::audio_capture::AudioCaptureSession),
 }
 
-unsafe impl Send for PlatformCapture {}
-
 impl PlatformCapture {
   fn stop(&mut self) -> Result<()> {
     match self {
@@ -374,10 +372,13 @@ impl PlatformCapture {
   }
 }
 
+enum ControlMessage {
+  Stop(Sender<RecordingResult<RecordingArtifact>>),
+}
+
 struct ActiveRecording {
-  sender: Option<Sender<Vec<f32>>>,
-  capture: PlatformCapture,
-  worker: Option<JoinHandle<std::result::Result<RecordingArtifact, RecordingError>>>,
+  control_tx: Sender<ControlMessage>,
+  controller: Option<JoinHandle<()>>,
 }
 
 static ACTIVE_RECORDINGS: LazyLock<Mutex<HashMap<String, ActiveRecording>>> =
@@ -485,6 +486,78 @@ fn spawn_worker(
   })
 }
 
+fn spawn_recording_controller(
+  id: String,
+  filepath: PathBuf,
+  opts: RecordingStartOptions,
+) -> (Receiver<RecordingResult<u32>>, Sender<ControlMessage>, JoinHandle<()>) {
+  let (started_tx, started_rx) = bounded(1);
+  let (control_tx, control_rx) = bounded(1);
+
+  let controller = thread::spawn(move || {
+    let (tx, rx) = bounded::<Vec<f32>>(32);
+    let (mut capture, capture_rate, capture_channels) = match start_capture(&opts, tx.clone()) {
+      Ok(capture) => capture,
+      Err(error) => {
+        let _ = started_tx.send(Err(RecordingError::Start(error.to_string())));
+        return;
+      }
+    };
+
+    let encoding_channels = match opts.channels {
+      Some(1) => 1,
+      Some(2) => 2,
+      _ => capture_channels,
+    };
+
+    let mut audio_tx = Some(tx);
+    let mut worker = Some(spawn_worker(id, filepath, rx, capture_rate, encoding_channels));
+
+    if started_tx.send(Ok(encoding_channels)).is_err() {
+      let _ = capture.stop();
+      drop(audio_tx.take());
+      if let Some(handle) = worker.take() {
+        let _ = handle.join();
+      }
+      return;
+    }
+
+    while let Ok(message) = control_rx.recv() {
+      match message {
+        ControlMessage::Stop(reply_tx) => {
+          let result = match capture.stop() {
+            Ok(()) => {
+              drop(audio_tx.take());
+              match worker.take() {
+                Some(handle) => match handle.join() {
+                  Ok(result) => result,
+                  Err(_) => Err(RecordingError::Join),
+                },
+                None => Err(RecordingError::Join),
+              }
+            }
+            Err(error) => Err(RecordingError::Start(error.to_string())),
+          };
+
+          let _ = reply_tx.send(result);
+
+          if worker.is_none() {
+            break;
+          }
+        }
+      }
+    }
+
+    if let Some(handle) = worker.take() {
+      let _ = capture.stop();
+      drop(audio_tx.take());
+      let _ = handle.join();
+    }
+  });
+
+  (started_rx, control_tx, controller)
+}
+
 #[napi]
 pub fn start_recording(opts: RecordingStartOptions) -> Result<RecordingSessionMeta> {
   if let Some(fmt) = opts.format.as_deref()
@@ -514,17 +587,10 @@ pub fn start_recording(opts: RecordingStartOptions) -> Result<RecordingSessionMe
     fs::remove_file(&filepath)?;
   }
 
-  let (tx, rx) = bounded::<Vec<f32>>(32);
-  let (capture, capture_rate, capture_channels) =
-    start_capture(&opts, tx.clone()).map_err(|e| RecordingError::Start(e.to_string()))?;
-
-  let encoding_channels = match opts.channels {
-    Some(1) => 1,
-    Some(2) => 2,
-    _ => capture_channels,
-  };
-
-  let worker = spawn_worker(id.clone(), filepath.clone(), rx, capture_rate, encoding_channels);
+  let (started_rx, control_tx, controller) = spawn_recording_controller(id.clone(), filepath.clone(), opts);
+  let encoding_channels = started_rx
+    .recv()
+    .map_err(|_| RecordingError::Start("failed to start recording controller".into()))??;
 
   let meta = RecordingSessionMeta {
     id: id.clone(),
@@ -541,9 +607,8 @@ pub fn start_recording(opts: RecordingStartOptions) -> Result<RecordingSessionMe
   recordings.insert(
     id,
     ActiveRecording {
-      sender: Some(tx),
-      capture,
-      worker: Some(worker),
+      control_tx,
+      controller: Some(controller),
     },
   );
 
@@ -552,26 +617,30 @@ pub fn start_recording(opts: RecordingStartOptions) -> Result<RecordingSessionMe
 
 #[napi]
 pub fn stop_recording(id: String) -> Result<RecordingArtifact> {
-  let mut entry = {
-    let mut recordings = ACTIVE_RECORDINGS
+  let control_tx = {
+    let recordings = ACTIVE_RECORDINGS
       .lock()
       .map_err(|_| RecordingError::Start("lock poisoned".into()))?;
 
-    recordings.remove(&id).ok_or(RecordingError::NotFound)?
+    recordings.get(&id).ok_or(RecordingError::NotFound)?.control_tx.clone()
   };
 
-  if let Err(error) = entry.capture.stop() {
-    ACTIVE_RECORDINGS
-      .lock()
-      .map_err(|_| RecordingError::Start("lock poisoned".into()))?
-      .insert(id, entry);
-    return Err(RecordingError::Start(error.to_string()).into());
+  let (reply_tx, reply_rx) = bounded(1);
+  control_tx
+    .send(ControlMessage::Stop(reply_tx))
+    .map_err(|_| RecordingError::Join)?;
+
+  let artifact = reply_rx.recv().map_err(|_| RecordingError::Join)??;
+
+  let mut entry = ACTIVE_RECORDINGS
+    .lock()
+    .map_err(|_| RecordingError::Start("lock poisoned".into()))?
+    .remove(&id)
+    .ok_or(RecordingError::NotFound)?;
+
+  if let Some(handle) = entry.controller.take() {
+    handle.join().map_err(|_| RecordingError::Join)?;
   }
-
-  drop(entry.sender.take());
-
-  let handle = entry.worker.take().ok_or(RecordingError::Join)?;
-  let artifact = handle.join().map_err(|_| RecordingError::Join)??;
 
   Ok(artifact)
 }

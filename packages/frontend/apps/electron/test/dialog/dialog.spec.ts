@@ -133,7 +133,7 @@ describe('dialog export', () => {
     realpath.mockImplementation(async path => path);
     getSpaceDBPath.mockResolvedValue(dbPath);
     move.mockResolvedValue(undefined);
-    showSaveDialog.mockResolvedValue({ filePath: exportPath });
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: exportPath });
 
     const { saveDBFileAs } =
       await import('@affine/electron/helper/dialog/dialog');
@@ -157,7 +157,7 @@ describe('dialog export', () => {
 
     pathExists.mockResolvedValue(false);
     getSpaceDBPath.mockResolvedValue(dbPath);
-    showSaveDialog.mockResolvedValue({ filePath: dbPath });
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: dbPath });
 
     const { saveDBFileAs } =
       await import('@affine/electron/helper/dialog/dialog');
@@ -179,7 +179,7 @@ describe('dialog export', () => {
       path === exportPath ? dbPath : path
     );
     getSpaceDBPath.mockResolvedValue(dbPath);
-    showSaveDialog.mockResolvedValue({ filePath: exportPath });
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: exportPath });
 
     const { saveDBFileAs } =
       await import('@affine/electron/helper/dialog/dialog');
@@ -197,6 +197,12 @@ describe('dialog import', () => {
     const originalPath = '/tmp/import.affine';
     const internalPath = '/app/workspaces/local/workspace-1/storage.db';
 
+    pathExists.mockResolvedValue(true);
+    realpath.mockImplementation(async path => path);
+    showOpenDialog.mockResolvedValue({
+      canceled: false,
+      filePaths: [originalPath],
+    });
     getWorkspacesBasePath.mockResolvedValue('/app/workspaces');
     getSpaceDBPath.mockResolvedValue(internalPath);
     docValidate.mockResolvedValue(true);
@@ -208,7 +214,7 @@ describe('dialog import', () => {
     const { loadDBFile } =
       await import('@affine/electron/helper/dialog/dialog');
 
-    const result = await loadDBFile(originalPath);
+    const result = await loadDBFile();
 
     expect(result).toEqual({ workspaceId: 'workspace-1' });
     expect(docValidate).toHaveBeenCalledWith(originalPath);
@@ -221,6 +227,12 @@ describe('dialog import', () => {
   test('loadDBFile rejects v2 imports with unexpected schema objects', async () => {
     const originalPath = '/tmp/import.affine';
 
+    pathExists.mockResolvedValue(true);
+    realpath.mockImplementation(async path => path);
+    showOpenDialog.mockResolvedValue({
+      canceled: false,
+      filePaths: [originalPath],
+    });
     getWorkspacesBasePath.mockResolvedValue('/app/workspaces');
     docValidate.mockResolvedValue(true);
     docValidateImportSchema.mockResolvedValue(false);
@@ -228,7 +240,7 @@ describe('dialog import', () => {
     const { loadDBFile } =
       await import('@affine/electron/helper/dialog/dialog');
 
-    const result = await loadDBFile(originalPath);
+    const result = await loadDBFile();
 
     expect(result).toEqual({ error: 'DB_FILE_INVALID' });
     expect(docVacuumInto).not.toHaveBeenCalled();
@@ -239,6 +251,12 @@ describe('dialog import', () => {
     const originalPath = '/tmp/import-v1.affine';
     const internalPath = '/app/workspaces/workspace-1/storage.db';
 
+    pathExists.mockResolvedValue(true);
+    realpath.mockImplementation(async path => path);
+    showOpenDialog.mockResolvedValue({
+      canceled: false,
+      filePaths: [originalPath],
+    });
     getWorkspacesBasePath.mockResolvedValue('/app/workspaces');
     getWorkspaceDBPath.mockResolvedValue(internalPath);
     docValidate.mockResolvedValue(false);
@@ -250,7 +268,7 @@ describe('dialog import', () => {
     const { loadDBFile } =
       await import('@affine/electron/helper/dialog/dialog');
 
-    const result = await loadDBFile(originalPath);
+    const result = await loadDBFile();
 
     expect(result).toEqual({ workspaceId: 'workspace-1' });
     expect(sqliteValidate).toHaveBeenCalledWith(originalPath);
@@ -262,5 +280,31 @@ describe('dialog import', () => {
       mainDBPath: internalPath,
     });
     expect(copy).not.toHaveBeenCalled();
+  });
+
+  test('loadDBFile rejects normalized paths inside app data', async () => {
+    const selectedPath = '/tmp/import.affine';
+    const normalizedPath = '/app/workspaces/local/existing/storage.db';
+
+    pathExists.mockResolvedValue(true);
+    realpath.mockImplementation(async path => {
+      if (path === selectedPath) {
+        return normalizedPath;
+      }
+      return path;
+    });
+    showOpenDialog.mockResolvedValue({
+      canceled: false,
+      filePaths: [selectedPath],
+    });
+    getWorkspacesBasePath.mockResolvedValue('/app/workspaces');
+
+    const { loadDBFile } =
+      await import('@affine/electron/helper/dialog/dialog');
+
+    const result = await loadDBFile();
+
+    expect(result).toEqual({ error: 'DB_FILE_PATH_INVALID' });
+    expect(docValidate).not.toHaveBeenCalled();
   });
 });
