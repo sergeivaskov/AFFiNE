@@ -150,9 +150,16 @@ export function normalizeWorkspaceIdForPath(
     return safeValue;
   }
 
-  const normalized = safeValue
-    .replace(/[<>:"|?*]/g, '_')
-    .replace(/[. ]+$/g, '');
+  const windowsReservedChars = new Set(['<', '>', ':', '"', '|', '?', '*']);
+  let normalized = '';
+
+  for (const character of safeValue) {
+    normalized += windowsReservedChars.has(character) ? '_' : character;
+  }
+
+  while (normalized.endsWith('.') || normalized.endsWith(' ')) {
+    normalized = normalized.slice(0, -1);
+  }
 
   if (!normalized || normalized === '.' || normalized === '..') {
     throw new Error(`Invalid ${label}`);
