@@ -122,11 +122,43 @@ export function assertPathComponent(
   value: string,
   label: string = 'path component'
 ) {
-  if (!value || value === '.' || value === '..' || /[/\\]/.test(value)) {
+  const hasControlChar = Array.from(value).some(
+    character => character.charCodeAt(0) < 0x20
+  );
+
+  if (
+    !value ||
+    value === '.' ||
+    value === '..' ||
+    /[/\\]/.test(value) ||
+    hasControlChar
+  ) {
     throw new Error(`Invalid ${label}`);
   }
 
   return value;
+}
+
+export function normalizeWorkspaceIdForPath(
+  value: string,
+  options: { windows?: boolean; label?: string } = {}
+) {
+  const { windows = isWindows(), label = 'workspace id' } = options;
+  const safeValue = assertPathComponent(value, label);
+
+  if (!windows) {
+    return safeValue;
+  }
+
+  const normalized = safeValue
+    .replace(/[<>:"|?*]/g, '_')
+    .replace(/[. ]+$/g, '');
+
+  if (!normalized || normalized === '.' || normalized === '..') {
+    throw new Error(`Invalid ${label}`);
+  }
+
+  return normalized;
 }
 
 // credit: https://github.com/facebook/fbjs/blob/main/packages/fbjs/src/core/shallowEqual.js

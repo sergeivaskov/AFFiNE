@@ -1,5 +1,4 @@
 use std::{
-  collections::HashMap,
   fs,
   io::{BufWriter, Write},
   path::PathBuf,
@@ -377,12 +376,12 @@ enum ControlMessage {
 }
 
 struct ActiveRecording {
+  id: String,
   control_tx: Sender<ControlMessage>,
   controller: Option<JoinHandle<()>>,
 }
 
-static ACTIVE_RECORDINGS: LazyLock<Mutex<HashMap<String, ActiveRecording>>> =
-  LazyLock::new(|| Mutex::new(HashMap::new()));
+static ACTIVE_RECORDING: LazyLock<Mutex<Option<ActiveRecording>>> = LazyLock::new(|| Mutex::new(None));
 static START_RECORDING_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 fn now_millis() -> i64 {
@@ -558,6 +557,13 @@ fn spawn_recording_controller(
   (started_rx, control_tx, controller)
 }
 
+fn cleanup_recording_controller(control_tx: &Sender<ControlMessage>, controller: JoinHandle<()>) {
+  let (reply_tx, reply_rx) = bounded(1);
+  let _ = control_tx.send(ControlMessage::Stop(reply_tx));
+  let _ = reply_rx.recv();
+  let _ = controller.join();
+}
+
 #[napi]
 pub fn start_recording(opts: RecordingStartOptions) -> Result<RecordingSessionMeta> {
   if let Some(fmt) = opts.format.as_deref()
@@ -573,12 +579,12 @@ pub fn start_recording(opts: RecordingStartOptions) -> Result<RecordingSessionMe
   let id = sanitize_id(opts.id.clone());
 
   {
-    let recordings = ACTIVE_RECORDINGS
+    let recording = ACTIVE_RECORDING
       .lock()
       .map_err(|_| RecordingError::Start("lock poisoned".into()))?;
 
-    if recordings.contains_key(&id) {
-      return Err(RecordingError::Start("duplicate recording id".into()).into());
+    if recording.is_some() {
+      return Err(RecordingError::Start("recording already active".into()).into());
     }
   }
 
@@ -600,17 +606,24 @@ pub fn start_recording(opts: RecordingStartOptions) -> Result<RecordingSessionMe
     started_at: now_millis(),
   };
 
-  let mut recordings = ACTIVE_RECORDINGS
-    .lock()
-    .map_err(|_| RecordingError::Start("lock poisoned".into()))?;
+  let mut recording = match ACTIVE_RECORDING.lock() {
+    Ok(recording) => recording,
+    Err(_) => {
+      cleanup_recording_controller(&control_tx, controller);
+      return Err(RecordingError::Start("lock poisoned".into()).into());
+    }
+  };
 
-  recordings.insert(
+  if recording.is_some() {
+    cleanup_recording_controller(&control_tx, controller);
+    return Err(RecordingError::Start("recording already active".into()).into());
+  }
+
+  *recording = Some(ActiveRecording {
     id,
-    ActiveRecording {
-      control_tx,
-      controller: Some(controller),
-    },
-  );
+    control_tx,
+    controller: Some(controller),
+  });
 
   Ok(meta)
 }
@@ -618,11 +631,15 @@ pub fn start_recording(opts: RecordingStartOptions) -> Result<RecordingSessionMe
 #[napi]
 pub fn stop_recording(id: String) -> Result<RecordingArtifact> {
   let control_tx = {
-    let recordings = ACTIVE_RECORDINGS
+    let recording = ACTIVE_RECORDING
       .lock()
       .map_err(|_| RecordingError::Start("lock poisoned".into()))?;
 
-    recordings.get(&id).ok_or(RecordingError::NotFound)?.control_tx.clone()
+    let active = recording.as_ref().ok_or(RecordingError::NotFound)?;
+    if active.id != id {
+      return Err(RecordingError::NotFound.into());
+    }
+    active.control_tx.clone()
   };
 
   let (reply_tx, reply_rx) = bounded(1);
@@ -632,13 +649,17 @@ pub fn stop_recording(id: String) -> Result<RecordingArtifact> {
 
   let artifact = reply_rx.recv().map_err(|_| RecordingError::Join)??;
 
-  let mut entry = ACTIVE_RECORDINGS
+  let mut active_recording = ACTIVE_RECORDING
     .lock()
     .map_err(|_| RecordingError::Start("lock poisoned".into()))?
-    .remove(&id)
+    .take()
     .ok_or(RecordingError::NotFound)?;
 
-  if let Some(handle) = entry.controller.take() {
+  if active_recording.id != id {
+    return Err(RecordingError::NotFound.into());
+  }
+
+  if let Some(handle) = active_recording.controller.take() {
     handle.join().map_err(|_| RecordingError::Join)?;
   }
 

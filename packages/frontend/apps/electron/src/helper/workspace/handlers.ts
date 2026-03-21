@@ -10,7 +10,7 @@ import { nanoid } from 'nanoid';
 import { applyUpdate, Doc as YDoc } from 'yjs';
 
 import {
-  assertPathComponent,
+  normalizeWorkspaceIdForPath,
   resolveExistingPathInBase,
 } from '../../shared/utils';
 import { logger } from '../logger';
@@ -64,7 +64,7 @@ export async function trashWorkspace(universalId: string) {
 
   const dbPath = await getSpaceDBPath(peer, type, id);
   const basePath = await getDeletedWorkspacesBasePath();
-  const movedPath = path.join(basePath, `${id}`);
+  const movedPath = path.join(basePath, normalizeWorkspaceIdForPath(id));
   try {
     const storage = new DocStorage(dbPath);
     if (await storage.validate()) {
@@ -330,10 +330,7 @@ async function importWorkspaceDb(originalPath: string) {
 
 export async function deleteBackupWorkspace(id: string) {
   const basePath = await getDeletedWorkspacesBasePath();
-  const workspacePath = path.join(
-    basePath,
-    assertPathComponent(id, 'workspace id')
-  );
+  const workspacePath = path.join(basePath, normalizeWorkspaceIdForPath(id));
   await fs.rmdir(workspacePath, { recursive: true });
   logger.info(
     'deleteBackupWorkspace',
@@ -343,10 +340,7 @@ export async function deleteBackupWorkspace(id: string) {
 
 export async function recoverBackupWorkspace(id: string) {
   const basePath = await getDeletedWorkspacesBasePath();
-  const workspacePath = path.join(
-    basePath,
-    assertPathComponent(id, 'workspace id')
-  );
+  const workspacePath = path.join(basePath, normalizeWorkspaceIdForPath(id));
   const dbPath = await resolveExistingPathInBase(
     basePath,
     path.join(workspacePath, 'storage.db'),
