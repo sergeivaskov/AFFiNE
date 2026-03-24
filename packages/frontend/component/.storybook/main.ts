@@ -6,7 +6,10 @@ import swc from 'unplugin-swc';
 import { mergeConfig } from 'vite';
 
 export default {
-  stories: ['../src/ui/**/*.@(mdx|stories.@(js|jsx|ts|tsx))'],
+  stories: [
+    '../src/ui/**/*.@(mdx|stories.@(js|jsx|ts|tsx))',
+    '../src/components/**/*.@(mdx|stories.@(js|jsx|ts|tsx))'
+  ],
 
   addons: [],
 
@@ -20,9 +23,6 @@ export default {
   docs: {},
 
   async viteFinal(config, _options) {
-    const { getBuildConfig } = await import('@affine-tools/utils/build-config');
-    const { Package } = await import('@affine-tools/utils/workspace');
-
     return mergeConfig(config, {
       plugins: [
         vanillaExtractPlugin(),
@@ -49,15 +49,12 @@ export default {
           inlineSourcesContent: true,
         }),
       ],
-      define: Object.entries(
-        getBuildConfig(new Package('@affine/web'), {
-          mode: 'development',
-          channel: 'canary',
-        })
-      ).reduce((envs, [key, value]) => {
-        envs[`BUILD_CONFIG.${key}`] = JSON.stringify(value);
-        return envs;
-      }, {}),
+      define: {
+        'BUILD_CONFIG.debug': JSON.stringify(true),
+        'BUILD_CONFIG.isElectron': JSON.stringify(false),
+        'BUILD_CONFIG.isSelfHosted': JSON.stringify(false),
+        'process.env.NODE_ENV': JSON.stringify('development'),
+      },
     });
   },
 
