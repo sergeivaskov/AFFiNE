@@ -49,6 +49,9 @@ testem.log
 tsconfig.tsbuildinfo
 .context
 /*.md
+.cursor/logs/
+*.jsonl
+*.log
 
 # System Files
 .DS_Store

@@ -1,12 +1,18 @@
 import { Global, Module } from '@nestjs/common';
 
+import { ProofaLogger } from '../../plugins/proofa-logger';
 import { ConfigModule } from '../config';
 import { AFFiNELogger } from './service';
 
 @Global()
 @Module({
   imports: [ConfigModule],
-  providers: [AFFiNELogger],
+  providers: [
+    {
+      provide: AFFiNELogger,
+      useClass: ProofaLogger,
+    },
+  ],
   exports: [AFFiNELogger],
 })
 export class LoggerModule {}
