@@ -8,7 +8,7 @@ import { AFFiNELogger } from '../../base/logger/service';
 // Путь к файлу логов для MCP-сервера
 const aiLogFilePath = path.resolve(
   process.cwd(),
-  '../../.cursor/logs/node-backend.jsonl'
+  '../../../../../.cursor/logs/node-backend.jsonl'
 );
 
 @Injectable()
@@ -28,6 +28,10 @@ export class ProofaLogger extends AFFiNELogger {
           requestId: AFFiNELogger.getRequestId(),
           contextName: context || this.context,
           stack,
+        },
+        extra: {
+          correlation_id: AFFiNELogger.getRequestId() || 'no-request-context',
+          channel: context || this.context || 'app',
         },
       };
       // Асинхронная запись, чтобы не блокировать Event Loop
