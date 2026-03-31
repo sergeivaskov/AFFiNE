@@ -1,4 +1,4 @@
-# Snapshot report for `src/__tests__/copilot.e2e.ts`
+# Snapshot report for `src/__tests__/copilot/copilot.e2e.ts`
 
 The actual snapshot is saved in `copilot.e2e.ts.snap`.
 

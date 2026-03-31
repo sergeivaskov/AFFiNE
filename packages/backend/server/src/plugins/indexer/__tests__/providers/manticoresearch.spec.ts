@@ -21,7 +21,9 @@ const module = await createModule({
         enabled: true,
         provider: {
           type: SearchProviderType.Manticoresearch,
-          endpoint: 'http://localhost:9308',
+          endpoint:
+            process.env.AFFINE_INDEXER_SEARCH_ENDPOINT ||
+            'http://localhost:9308',
         },
       },
     }),

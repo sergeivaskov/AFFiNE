@@ -1,4 +1,4 @@
-# Snapshot report for `src/__tests__/copilot.spec.ts`
+# Snapshot report for `src/__tests__/copilot/copilot.spec.ts`
 
 The actual snapshot is saved in `copilot.spec.ts.snap`.
 

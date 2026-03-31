@@ -142,7 +142,7 @@
     "why-is-node-running": "^3.2.2"
   },
   "nodemonConfig": {
-    "exec": "node",
+    "exec": "node -r ./proofa-bootstrap.cjs",
     "ignore": [
       "**/__tests__/**",
       "**/dist/**",

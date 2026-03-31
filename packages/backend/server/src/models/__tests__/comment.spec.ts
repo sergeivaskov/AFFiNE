@@ -98,6 +98,9 @@ test('should update a comment', async t => {
     userId: owner.id,
   });
 
+  // Add small delay to ensure updatedAt differs from createdAt
+  await new Promise(resolve => setTimeout(resolve, 10));
+
   const comment2 = await models.comment.update({
     id: comment1.id,
     content: {
@@ -146,6 +149,9 @@ test('should resolve a comment', async t => {
     docId,
     userId: owner.id,
   });
+
+  // Add small delay to ensure updatedAt differs from createdAt
+  await new Promise(resolve => setTimeout(resolve, 10));
 
   const comment2 = await models.comment.resolve({
     id: comment.id,
@@ -271,6 +277,9 @@ test('should update a reply', async t => {
     },
     commentId: comment.id,
   });
+
+  // Add small delay to ensure updatedAt differs from createdAt
+  await new Promise(resolve => setTimeout(resolve, 10));
 
   const reply2 = await models.comment.updateReply({
     id: reply.id,
@@ -422,6 +431,9 @@ test('should list changes', async t => {
     userId: owner.id,
   });
 
+  // Add delay to ensure distinct timestamps
+  await new Promise(resolve => setTimeout(resolve, 10));
+
   const comment2 = await models.comment.create({
     content: {
       type: 'paragraph',
@@ -440,6 +452,9 @@ test('should list changes', async t => {
     },
     commentId: comment1.id,
   });
+
+  // Add delay to ensure distinct timestamps
+  await new Promise(resolve => setTimeout(resolve, 10));
 
   const reply2 = await models.comment.createReply({
     userId: owner.id,

@@ -1,12 +1,64 @@
+import * as fs from 'node:fs';
+
 import { ConsoleLogger, Injectable, type LogLevel } from '@nestjs/common';
 import { ClsServiceManager } from 'nestjs-cls';
 
 import { UserFriendlyError } from '../error';
 
+const aiLogFilePath =
+  process.env.AI_LOG_FILE_PATH || '/var/log/proofa/node-backend.jsonl';
+
 // DO NOT use this Logger directly
 // Use it via this way: `private readonly logger = new Logger(MyService.name)`
 @Injectable()
 export class AFFiNELogger extends ConsoleLogger {
+  private writeJsonLog(
+    level: LogLevel,
+    message: unknown,
+    context?: string,
+    stack?: string
+  ) {
+    try {
+      const logEntry = {
+        timestamp: new Date().toISOString(),
+        level: level.toUpperCase(),
+        msg: typeof message === 'string' ? message : JSON.stringify(message),
+        context: {
+          contextName: context || this.context,
+          stack,
+        },
+        extra: {
+          correlation_id: AFFiNELogger.getRequestId() || 'no-request-context',
+          channel: context || this.context,
+        },
+      };
+      // Асинхронная запись, чтобы не блокировать Event Loop
+      fs.appendFile(aiLogFilePath, JSON.stringify(logEntry) + '\n', () => {});
+    } catch (e) {
+      // Игнорируем ошибки записи логов
+    }
+  }
+
+  override log(message: any, context?: string) {
+    super.log(message, context);
+    this.writeJsonLog('log', message, context);
+  }
+
+  override warn(message: any, context?: string) {
+    super.warn(message, context);
+    this.writeJsonLog('warn', message, context);
+  }
+
+  override debug(message: any, context?: string) {
+    super.debug(message, context);
+    this.writeJsonLog('debug', message, context);
+  }
+
+  override verbose(message: any, context?: string) {
+    super.verbose(message, context);
+    this.writeJsonLog('verbose', message, context);
+  }
+
   override stringifyMessage(message: unknown, logLevel: LogLevel) {
     const messageString = super.stringifyMessage(message, logLevel);
     const requestId = AFFiNELogger.getRequestId();
@@ -53,6 +105,13 @@ export class AFFiNELogger extends ConsoleLogger {
     stackOrError?: Error | string | unknown,
     context?: string
   ) {
-    super.error(message, AFFiNELogger.formatStack(stackOrError), context);
+    const stack = AFFiNELogger.formatStack(stackOrError);
+    super.error(message, stack, context);
+    this.writeJsonLog(
+      'error',
+      message,
+      context,
+      typeof stack === 'string' ? stack : undefined
+    );
   }
 }

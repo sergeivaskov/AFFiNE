@@ -1,30 +1,45 @@
-FROM node:22-alpine
+FROM node:22-bookworm
 
 WORKDIR /app
 
 # Enable Corepack for Yarn
 RUN corepack enable
 
-# Install required system dependencies
-RUN apk add --no-cache python3 make g++ git postgresql-client redis
+# Install required system dependencies including Rust toolchain
+RUN apt-get update && apt-get install -y \
+    python3 make g++ git postgresql-client redis-tools \
+    curl build-essential \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup.sh \
+    && sh /tmp/rustup.sh -y \
+    && rm /tmp/rustup.sh \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Copy everything
 COPY . .
 
 # Install dependencies
+ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 RUN yarn install
 
 # Patch the dev server proxy to point to the affine-server container
-RUN sed -i "s/http:\/\/localhost:3010/http:\/\/affine-server:3010/g" tools/cli/src/bundle-shared.ts
+RUN sed -i "s/http:\/\/localhost:3010/http:\/\/affine-server:3010/g" tools/cli/src/bundle-shared.ts || true
 
 # Generate Prisma client
-RUN yarn workspace @affine/server postinstall
+RUN yarn workspace @affine/server postinstall || true
 
-# Make entrypoint executable
-RUN chmod +x docker-entrypoint.sh
+# Build native modules (required for server tests)
+RUN yarn affine @affine/server-native build
 
-# Expose the ports for web and server
-EXPOSE 8080 3010
+# Copy native module to architecture-specific names for bundler compatibility
+RUN cp /app/packages/backend/native/server-native.node /app/packages/backend/native/server-native.arm64.node && \
+    cp /app/packages/backend/native/server-native.node /app/packages/backend/native/server-native.x64.node && \
+    cp /app/packages/backend/native/server-native.node /app/packages/backend/native/server-native.armv7.node
 
-ENTRYPOINT ["/app/docker-entrypoint.sh"]
+# Expose port
+EXPOSE 3010 5555 8080
+
+# Default command
 CMD ["yarn", "dev"]
