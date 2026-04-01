@@ -1,5 +1,5 @@
-const http = require('http');
-const crypto = require('crypto');
+const http = require('node:http');
+const crypto = require('node:crypto');
 
 const originalEmit = http.Server.prototype.emit;
 

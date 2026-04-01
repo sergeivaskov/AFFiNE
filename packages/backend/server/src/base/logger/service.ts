@@ -34,7 +34,7 @@ export class AFFiNELogger extends ConsoleLogger {
       };
       // Асинхронная запись, чтобы не блокировать Event Loop
       fs.appendFile(aiLogFilePath, JSON.stringify(logEntry) + '\n', () => {});
-    } catch (e) {
+    } catch {
       // Игнорируем ошибки записи логов
     }
   }

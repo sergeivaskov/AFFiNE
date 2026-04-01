@@ -4,19 +4,19 @@ import test from 'ava';
 
 import { getRequestResponseFromHost } from '../../../base/utils/request';
 
-let moduleRef: TestingModule;
-let prisma: PrismaService;
+let _moduleRef: TestingModule;
+let _prisma: PrismaService;
 
 test.beforeEach(async () => {
-  // moduleRef = await Test.createTestingModule({
+  // _moduleRef = await Test.createTestingModule({
   //   imports: [AppModule],
   // }).compile();
-  // prisma = moduleRef.get(PrismaService);
+  // _prisma = _moduleRef.get(PrismaService);
 });
 
 test.afterEach.always(async () => {
-  // await prisma.$disconnect();
-  // await moduleRef?.close();
+  // await _prisma.$disconnect();
+  // await _moduleRef?.close();
 });
 
 test('getRequestResponseFromHost integration test', async t => {

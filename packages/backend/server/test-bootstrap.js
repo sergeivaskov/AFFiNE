@@ -1,4 +1,4 @@
-const http = require('http');
+const http = require('node:http');
 require('./proofa-bootstrap.js');
 
 const server = http.createServer((req, res) => {
