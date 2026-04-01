@@ -9,6 +9,7 @@
     "dev": "nodemon ./src/index.ts",
     "dev:mail": "email dev -d src/mails",
     "test": "ava --concurrency 1 --serial",
+    "test:proofa": "tsx --tsconfig tsconfig.json --test src/__tests__/proofa-bootstrap.plain.test.ts src/plugins/proofa-logger/__tests__/proofa-logger.plain.test.ts",
     "test:copilot": "ava \"src/__tests__/copilot/copilot-*.spec.ts\"",
     "test:coverage": "c8 ava --concurrency 1 --serial",
     "test:copilot:coverage": "c8 ava --timeout=5m \"src/__tests__/copilot/copilot-*.spec.ts\"",
