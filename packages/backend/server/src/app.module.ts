@@ -62,6 +62,7 @@ import { LicenseModule } from './plugins/license';
 import { OAuthModule } from './plugins/oauth';
 import { PaymentModule } from './plugins/payment';
 import { WorkerModule } from './plugins/worker';
+import { ProofaAuthModule } from './plugins/proofa-auth';
 
 export const FunctionalityModules = [
   ClsModule.forRoot({
@@ -213,7 +214,10 @@ export function buildAppModule(env: Env) {
     .useIf(() => env.flavors.front, StaticFileModule)
 
     // gcloud
-    .useIf(() => env.gcp, GCloudModule);
+    .useIf(() => env.gcp, GCloudModule)
+    
+    // proofa custom auth
+    .use(ProofaAuthModule);
 
   return factor.compile();
 }

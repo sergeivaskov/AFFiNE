@@ -1,0 +1,57 @@
+# Production Dockerfile for AFFiNE Frontend
+# Multi-stage build for minimal image size
+
+# Stage 1: Builder
+FROM node:22-bookworm AS builder
+
+WORKDIR /app
+
+# Enable Corepack for Yarn
+RUN corepack enable
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    python3 make g++ git \
+    curl build-essential \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup.sh \
+    && sh /tmp/rustup.sh -y \
+    && rm /tmp/rustup.sh \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Copy package files
+COPY package.json yarn.lock .yarnrc.yml ./
+COPY .yarn ./.yarn
+
+# Install dependencies
+ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+RUN yarn install --immutable
+
+# Copy source code
+COPY . .
+
+# Generate Prisma client (if needed by frontend)
+RUN yarn workspace @affine/server postinstall || true
+
+# Build frontend
+RUN yarn affine web build
+
+# Stage 2: Nginx server
+FROM nginx:alpine
+
+# Copy built files
+COPY --from=builder /app/packages/frontend/apps/web/dist /usr/share/nginx/html
+
+# Copy nginx configuration
+COPY infrastructure/nginx/frontend.conf /etc/nginx/conf.d/default.conf
+
+# Expose port
+EXPOSE 80
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost/ || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]

@@ -6,7 +6,10 @@ import type { ServerService } from './server';
 
 const logger = new DebugLogger('affine:fetch');
 
-export type FetchInit = RequestInit & { timeout?: number };
+export type FetchInit = RequestInit & { timeout?: number; _isRetry?: boolean };
+
+// Global promise to deduplicate refresh requests
+let refreshTokenPromise: Promise<boolean> | null = null;
 
 export class FetchService extends Service {
   constructor(private readonly serverService: ServerService) {
@@ -21,7 +24,7 @@ export class FetchService extends Service {
       traceEvent?: string;
     }
   ) => {
-    return fromPromise(signal => {
+    return fromPromise((signal: AbortSignal) => {
       return this.fetch(input, { signal, ...init });
     });
   };
@@ -55,6 +58,7 @@ export class FetchService extends Service {
         new URL(input, this.serverService.server.serverMetadata.baseUrl),
         {
           ...init,
+          credentials: init?.credentials ?? 'include',
           signal: abortController.signal,
           headers: {
             ...init?.headers,
@@ -85,6 +89,35 @@ export class FetchService extends Service {
     }
 
     if (!res.ok) {
+      // Handle 401 Unauthorized by trying to refresh the token
+      if (res.status === 401 && !init?._isRetry && !input.includes('/api/auth/refresh') && !input.includes('/api/auth/sign-in') && !input.includes('/api/auth/sign-out')) {
+        logger.debug('401 Unauthorized, attempting to refresh token...');
+        
+        if (!refreshTokenPromise) {
+          refreshTokenPromise = globalThis.fetch(
+            new URL('/api/auth/refresh', this.serverService.server.serverMetadata.baseUrl),
+            { method: 'POST', credentials: 'include' }
+          ).then(r => {
+            refreshTokenPromise = null;
+            return r.ok;
+          }).catch(() => {
+            refreshTokenPromise = null;
+            return false;
+          });
+        }
+
+        const refreshed = await refreshTokenPromise;
+        if (refreshed) {
+          logger.debug('Token refreshed successfully, retrying original request');
+          // Retry the original request (without timeout recursion issues hopefully)
+          return this.fetch(input, { ...init, _isRetry: true });
+        } else {
+          logger.debug('Token refresh failed');
+          // If refresh failed, we should probably trigger a logout or redirect to login
+          // But for now, we just let the 401 error propagate
+        }
+      }
+
       if (res.status === 504) {
         const error = new Error('Gateway Timeout');
         logger.debug('network error', error);
