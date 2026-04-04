@@ -61,8 +61,9 @@ import { IndexerModule } from './plugins/indexer';
 import { LicenseModule } from './plugins/license';
 import { OAuthModule } from './plugins/oauth';
 import { PaymentModule } from './plugins/payment';
-import { WorkerModule } from './plugins/worker';
 import { ProofaAuthModule } from './plugins/proofa-auth';
+import { ProofaWorkspaceLifecycleModule } from './plugins/proofa-workspace-lifecycle';
+import { WorkerModule } from './plugins/worker';
 
 export const FunctionalityModules = [
   ClsModule.forRoot({
@@ -215,9 +216,10 @@ export function buildAppModule(env: Env) {
 
     // gcloud
     .useIf(() => env.gcp, GCloudModule)
-    
+
     // proofa custom auth
-    .use(ProofaAuthModule);
+    .use(ProofaAuthModule)
+    .use(ProofaWorkspaceLifecycleModule);
 
   return factor.compile();
 }

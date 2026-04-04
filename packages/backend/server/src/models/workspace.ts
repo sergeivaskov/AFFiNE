@@ -57,6 +57,7 @@ export type AdminWorkspaceSummary = {
 
 declare global {
   interface Events {
+    'workspace.created': Workspace;
     'workspace.updated': Workspace;
     'workspace.deleted': {
       id: string;
@@ -95,6 +96,9 @@ export class WorkspaceModel extends BaseModel {
     });
     this.logger.log(`Workspace created with id ${workspace.id}`);
     await this.models.workspaceUser.setOwner(workspace.id, userId);
+
+    this.event.emit('workspace.created', workspace);
+
     return workspace;
   }
 
